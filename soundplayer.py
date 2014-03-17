@@ -30,4 +30,3 @@ class SoundPlayer(object):
     def play_sound(self, sound_file):
         self.threads[self.next_thread].next_sound = sound_file
         self.next_thread = (self.next_thread + 1) % SOUND_THREADS
-        print self.next_thread
