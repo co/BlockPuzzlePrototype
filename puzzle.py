@@ -29,13 +29,17 @@ BG_COLOR = (0xc5, 0xbc, 0x8e)
 CANVAS = pygame.display.set_mode(SCREEN_SIZE)
 BOARD_POSITION = (TILE_SIZE, TILE_SIZE)
 
+LEFT = (-1, 0)
+RIGHT = (1, 0)
+UP = (0, -1)
+DOWN = (0, 1)
 
 GAME_MOVE_CONTROLS =\
     {
-        pygame.K_LEFT: (-1, 0),
-        pygame.K_RIGHT: (1, 0),
-        pygame.K_UP: (0, -1),
-        pygame.K_DOWN: (0, 1)
+        pygame.K_LEFT: LEFT,
+        pygame.K_RIGHT: RIGHT,
+        pygame.K_UP: UP,
+        pygame.K_DOWN: DOWN
     }
 
 BACK = 0
@@ -107,6 +111,16 @@ class Board(object):
             self.draw(frame_canvas)
             pygame.display.update()
             sleep(0.1)
+
+    def push_action(self, position, direction):
+        if direction == LEFT:
+            self.shift_row(position[1], BACK)
+        elif direction == RIGHT:
+            self.shift_row(position[1], FORWARD)
+        if direction == UP:
+            self.shift_column(position[0], BACK)
+        elif direction == DOWN:
+            self.shift_column(position[0], FORWARD)
 
     def draw(self, canvas):
         frame_canvas.fill(BG_COLOR)
@@ -196,6 +210,25 @@ class DiceBoard(Board):
         for point in row_points | column_points:
             self._board[point[1]][point[0]] = -1
 
+    def push_action(self, position, direction):
+        destination = (((position[0] + direction[0]) % len(self._board)),
+                       ((position[1] + direction[1]) % len(self._board)))
+        self.push_dice_dot(position, destination)
+
+    def push_dice_dot(self, start, destination):
+        sx, sy = start
+        dx, dy = destination
+        start_brick = self._board[sy][sx]
+        destination_brick = self._board[dy][dx]
+
+        dice_tile_offset = 8
+
+        if start_brick == dice_tile_offset or destination_brick == dice_tile_offset + 5:
+            return
+
+        self._board[sy][sx] -= 1
+        self._board[dy][dx] += 1
+
 
 def find_all_three_in_a_row_points(matrix):
     points = set()
@@ -264,16 +297,12 @@ while True:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_1:
                 board = new_board()
+            if event.key == pygame.K_2:
+                board = new_dice_board()
+            if event.key in GAME_MOVE_CONTROLS and event.mod & pygame.KMOD_CTRL:
+                board.push_action(cursor_position, GAME_MOVE_CONTROLS[event.key])
             if event.key in GAME_MOVE_CONTROLS:
                 cursor_position = add_cursor_position(cursor_position, GAME_MOVE_CONTROLS[event.key])
-            if event.key == pygame.K_LEFT and event.mod & pygame.KMOD_CTRL:
-                board.shift_row(cursor_position[1], BACK)
-            if event.key == pygame.K_RIGHT and event.mod & pygame.KMOD_CTRL:
-                board.shift_row(cursor_position[1], FORWARD)
-            if event.key == pygame.K_UP and event.mod & pygame.KMOD_CTRL:
-                board.shift_column(cursor_position[0], BACK)
-            if event.key == pygame.K_DOWN and event.mod & pygame.KMOD_CTRL:
-                board.shift_column(cursor_position[0], FORWARD)
     board.update(frame_canvas)
 
     board.draw(frame_canvas)
