@@ -2,9 +2,9 @@ import copy
 from itertools import izip, groupby
 import random
 from time import sleep
+import math
 import pygame
 import pygame.locals
-
 import sys
 from soundplayer import SoundPlayer
 
@@ -15,11 +15,13 @@ from soundplayer import SoundPlayer
 TILE_SIZE = 16
 SCREEN_MULTIPLIER = 3
 
+BOARD_OFFSET = TILE_SIZE
+
 BOARD_WIDTH = 7
 BOARD_HEIGHT = 7
 
 
-PIXEL_SIZE = ((BOARD_WIDTH + 2) * TILE_SIZE, (BOARD_HEIGHT + 2) * TILE_SIZE)
+PIXEL_SIZE = ((BOARD_WIDTH + 1) * TILE_SIZE + BOARD_OFFSET, (BOARD_HEIGHT + 1) * TILE_SIZE + BOARD_OFFSET)
 SCREEN_SIZE = (PIXEL_SIZE[0] * SCREEN_MULTIPLIER, PIXEL_SIZE[1] * SCREEN_MULTIPLIER)
 
 
@@ -73,13 +75,14 @@ def load_tile_set(tileset_file_name):
     return tiles
 
 
-def draw_cursor_position(cursor_position, tile_set, canvas):
-    x, y = cursor_position
-    cursor_graphic_index = 2
-    position = add_2d(BOARD_POSITION, (x * TILE_SIZE, y * TILE_SIZE))
-    canvas.blit(tile_set[cursor_graphic_index][0], position, tile_set[cursor_graphic_index][1])
+#def draw_cursor_position(cursor_position, tile_set, canvas):
+#    x, y = cursor_position
+#    cursor_graphic_index = 2
+#    position = add_2d(BOARD_POSITION, (x * TILE_SIZE, y * TILE_SIZE))
+#    canvas.blit(tile_set[cursor_graphic_index][0], position, tile_set[cursor_graphic_index][1])
+#
 
-
+# Remove?
 def add_cursor_position(cursor_position, delta):
     new_x = (cursor_position[0] + delta[0]) % BOARD_WIDTH
     new_y = (cursor_position[1] + delta[1]) % BOARD_HEIGHT
@@ -87,8 +90,9 @@ def add_cursor_position(cursor_position, delta):
 
 
 class Board(object):
-    def __init__(self, board):
+    def __init__(self, board, offset):
         self._board = board
+        self.rect = pygame.Rect(offset, offset, TILE_SIZE * len(board[0]), TILE_SIZE * len(board))
 
     def find_and_mark_full_rows(self):
         board_copy = copy.deepcopy(self._board)
@@ -125,9 +129,6 @@ class Board(object):
     def draw(self, canvas):
         frame_canvas.fill(BG_COLOR)
         self.prepare_draw(tile_set, canvas)
-        draw_cursor_position(cursor_position, tile_set, canvas)
-        scaled_canvas = pygame.transform.scale(canvas, SCREEN_SIZE)
-        CANVAS.blit(scaled_canvas, (0, 0))
 
     def prepare_draw(self, tile_set, canvas):
         for y, row in enumerate(self._board):
@@ -164,7 +165,6 @@ class Board(object):
 
             sleep(0.05)
             self.draw_empty_board_flash(tile_set, frame_canvas)
-            draw_cursor_position(cursor_position, tile_set, frame_canvas)
             scaled_canvas = pygame.transform.scale(frame_canvas, SCREEN_SIZE)
             CANVAS.blit(scaled_canvas, (0, 0))
             pygame.display.update()
@@ -195,8 +195,8 @@ class Board(object):
 
 
 class DiceBoard(Board):
-    def __init__(self, board):
-        super(DiceBoard, self).__init__(board)
+    def __init__(self, board, offset):
+        super(DiceBoard, self).__init__(board, offset)
 
     def _get_new_brick(self):
         return random.choice([8, 9, 10, 11, 12, 13])
@@ -266,28 +266,46 @@ def shift_matrix_row(matrix, row_index, direction):
 
 
 def new_board():
-    return Board([[random.choice([0, 1]) for _ in range(BOARD_WIDTH)] for _ in range(BOARD_WIDTH)])
+    return Board([[random.choice([0, 1]) for _ in range(BOARD_WIDTH)] for _ in range(BOARD_WIDTH)], BOARD_OFFSET)
 
 def new_dice_board():
-    return DiceBoard([[random.choice([8, 9, 10, 11, 12, 13]) for _ in range(BOARD_WIDTH)] for _ in range(BOARD_WIDTH)])
+    return DiceBoard([[random.choice([8, 9, 10, 11, 12, 13]) for _ in range(BOARD_WIDTH)] for _ in range(BOARD_WIDTH)],
+                     BOARD_OFFSET)
 
 def get_transposed_matrix(matrix):
     return [list(e) for e in izip(*matrix)]
 
 
+class Cursor(object):
+    def __init__(self, position):
+        self._rect = pygame.Rect(position, (1, 1))
 
-def draw_cursor_position(cursor_position, tile_set, canvas):
-    x, y = cursor_position
-    cursor_graphic_index = 2
-    position = add_2d(BOARD_POSITION, (x * TILE_SIZE, y * TILE_SIZE))
-    canvas.blit(tile_set[cursor_graphic_index][0], position, tile_set[cursor_graphic_index][1])
+    def set_position(self, position, board):
+        #x, y = position
+        self._rect.topleft = position
+        self._rect.clamp(board.rect)
+
+    def get_position(self):
+        return self._rect.topleft
+
+    def draw(self, canvas):
+        x, y = self.get_position()
+        cursor_graphic_index = 2
+        position = add_2d((BOARD_OFFSET, BOARD_OFFSET), (x * TILE_SIZE, y * TILE_SIZE))
+        canvas.blit(tile_set[cursor_graphic_index][0], position, tile_set[cursor_graphic_index][1])
+
+
+def screen_to_board_position(screen_position):
+    screen_tile_width = TILE_SIZE * SCREEN_MULTIPLIER
+    return ((screen_position[0] - screen_board_offset) / screen_tile_width,
+            (screen_position[1] - screen_board_offset) / screen_tile_width)
 
 
 board = new_dice_board()
 tile_set = load_tile_set("tileset.png")
 frame_canvas = pygame.Surface(PIXEL_SIZE)
-cursor_position = (BOARD_WIDTH / 2 + 1, BOARD_HEIGHT / 2 + 1)
-
+cursor = Cursor((BOARD_WIDTH / 2 + 1, BOARD_HEIGHT / 2 + 1))
+selected_board_point = None
 
 while True:
     for event in pygame.event.get():
@@ -300,12 +318,31 @@ while True:
             if event.key == pygame.K_2:
                 board = new_dice_board()
             if event.key in GAME_MOVE_CONTROLS and event.mod & pygame.KMOD_CTRL:
-                board.push_action(cursor_position, GAME_MOVE_CONTROLS[event.key])
-            if event.key in GAME_MOVE_CONTROLS:
-                cursor_position = add_cursor_position(cursor_position, GAME_MOVE_CONTROLS[event.key])
+                board.push_action(cursor.get_position(), GAME_MOVE_CONTROLS[event.key])
+            elif event.key in GAME_MOVE_CONTROLS:
+                cursor.set_position(add_2d(cursor.get_position(), GAME_MOVE_CONTROLS[event.key]), board)
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            pygame.mouse.get_rel()  # reset rel
+            selected_board_point = screen_to_board_position(event.pos)
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            mouse_movement = pygame.mouse.get_rel()  # reset rel
+            if math.sqrt(mouse_movement[0] ** 2 + mouse_movement[1] ** 2) > TILE_SIZE * SCREEN_MULTIPLIER * 0.6:
+                directions = [RIGHT, DOWN, LEFT, UP]
+                distances = [mouse_movement[0], mouse_movement[1], abs(mouse_movement[0]), abs(mouse_movement[1])]
+                chosen_direction = directions[distances.index(max(distances))]
+                board.push_action(selected_board_point, chosen_direction)
+
+        if event.type == pygame.MOUSEMOTION:
+            screen_board_offset = BOARD_OFFSET * SCREEN_MULTIPLIER
+            cursor.set_position(screen_to_board_position(event.pos), board)
     board.update(frame_canvas)
 
     board.draw(frame_canvas)
+    cursor.draw(frame_canvas)
+    scaled_canvas = pygame.transform.scale(frame_canvas, SCREEN_SIZE)
+    CANVAS.blit(scaled_canvas, (0, 0))
     pygame.display.update()
 
 
